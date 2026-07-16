@@ -1,5 +1,6 @@
 import sys
 import os
+import gc
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "fusion"))
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "road_state"))
@@ -16,16 +17,31 @@ from fastapi.responses import JSONResponse
 from ultralytics import YOLO
 from fusion_model import driver_risk_score, road_risk_score, combine_risk
 from safety_report import build_full_report
-from pothole_severity import analyze_frame
-from video_pothole import analyze_video
 
 app = FastAPI(title="VisionFusion API")
 
 DRIVER_MODEL_PATH = "../driver_state/models/driver_state/yolov8n_dmd-2/weights/best.pt"
 ROAD_MODEL_PATH = "../road_state/models/road_state/yolov8n_bdd100k/weights/best.pt"
 
-driver_model = YOLO(DRIVER_MODEL_PATH)
-road_model = YOLO(ROAD_MODEL_PATH)
+
+def load_driver_model():
+    return YOLO(DRIVER_MODEL_PATH)
+
+
+def load_road_model():
+    return YOLO(ROAD_MODEL_PATH)
+
+
+def load_pothole_module():
+    # imported lazily so MiDaS + its weights only load into memory on demand
+    import pothole_severity
+    return pothole_severity
+
+
+def release(*objects):
+    for obj in objects:
+        del obj
+    gc.collect()
 
 
 @app.get("/")
@@ -45,17 +61,21 @@ async def infer(driver_image: UploadFile = File(...), road_image: UploadFile = F
         shutil.copyfileobj(road_image.file, f)
 
     try:
+        driver_model = load_driver_model()
         driver_results = driver_model.predict(driver_path, verbose=False)[0]
-        road_results = road_model.predict(road_path, verbose=False)[0]
-
         driver_detections = [
             (driver_results.names[int(box.cls)], float(box.conf))
             for box in driver_results.boxes
         ]
+        release(driver_model)
+
+        road_model = load_road_model()
+        road_results = road_model.predict(road_path, verbose=False)[0]
         road_detections = [
             (road_results.names[int(box.cls)], float(box.conf), tuple(box.xywhn[0].tolist()))
             for box in road_results.boxes
         ]
+        release(road_model)
 
         d_score = driver_risk_score(driver_detections)
         r_score = road_risk_score(road_detections, 1, 1)
@@ -82,14 +102,33 @@ async def pothole_infer(road_hazard_image: UploadFile = File(...)):
         shutil.copyfileobj(road_hazard_image.file, f)
 
     try:
-        detections = analyze_frame(hazard_path)
+        pothole_severity = load_pothole_module()
+        detections = pothole_severity.analyze_frame(hazard_path)
+        release(pothole_severity)
         return JSONResponse({"pothole_detections": detections})
     finally:
         os.remove(hazard_path)
 
 
+@app.post("/video_pothole_infer")
+async def video_pothole_infer(road_hazard_video: UploadFile = File(...)):
+    tmp_id = uuid.uuid4().hex
+    video_path = f"tmp_video_{tmp_id}.mp4"
+
+    with open(video_path, "wb") as f:
+        shutil.copyfileobj(road_hazard_video.file, f)
+
+    try:
+        pothole_severity = load_pothole_module()
+        import video_pothole
+        result = video_pothole.analyze_video(video_path)
+        release(pothole_severity)
+        return JSONResponse(result)
+    finally:
+        os.remove(video_path)
+
+
 def draw_boxes_and_encode(image_path, detections, color=(0, 255, 0)):
-    """detections: list of (bbox, label) tuples. bbox can be xyxy (pixels) or xywhn (normalized)."""
     img = cv2.imread(image_path)
     h, w = img.shape[:2]
 
@@ -124,36 +163,42 @@ async def full_report(
             shutil.copyfileobj(upload.file, f)
 
     try:
+        driver_model = load_driver_model()
         driver_results = driver_model.predict(driver_path, verbose=False)[0]
-        road_results = road_model.predict(road_path, verbose=False)[0]
-
         driver_detections = [
             (driver_results.names[int(box.cls)], float(box.conf))
             for box in driver_results.boxes
         ]
-        road_detections = [
-            (road_results.names[int(box.cls)], float(box.conf), tuple(box.xywhn[0].tolist()))
-            for box in road_results.boxes
-        ]
-        pothole_detections = analyze_frame(hazard_path)
-
-        report = build_full_report(driver_detections, road_detections, pothole_detections)
-
         driver_boxes_img = draw_boxes_and_encode(
             driver_path,
             [(box.xyxy[0].tolist(), driver_results.names[int(box.cls)]) for box in driver_results.boxes],
             color=(0, 200, 0),
         )
+        release(driver_model)
+
+        road_model = load_road_model()
+        road_results = road_model.predict(road_path, verbose=False)[0]
+        road_detections = [
+            (road_results.names[int(box.cls)], float(box.conf), tuple(box.xywhn[0].tolist()))
+            for box in road_results.boxes
+        ]
         road_boxes_img = draw_boxes_and_encode(
             road_path,
             [(box.xywhn[0].tolist(), road_results.names[int(box.cls)]) for box in road_results.boxes],
             color=(255, 140, 0),
         )
+        release(road_model)
+
+        pothole_severity = load_pothole_module()
+        pothole_detections = pothole_severity.analyze_frame(hazard_path)
         hazard_boxes_img = draw_boxes_and_encode(
             hazard_path,
             [(p["bbox"], p["severity_label"]) for p in pothole_detections],
             color=(0, 0, 255),
         )
+        release(pothole_severity)
+
+        report = build_full_report(driver_detections, road_detections, pothole_detections)
 
         return JSONResponse({
             "report": report,
@@ -167,17 +212,3 @@ async def full_report(
     finally:
         for path in [driver_path, road_path, hazard_path]:
             os.remove(path)
-
-@app.post("/video_pothole_infer")
-async def video_pothole_infer(road_hazard_video: UploadFile = File(...)):
-    tmp_id = uuid.uuid4().hex
-    video_path = f"tmp_video_{tmp_id}.mp4"
-
-    with open(video_path, "wb") as f:
-        shutil.copyfileobj(road_hazard_video.file, f)
-
-    try:
-        result = analyze_video(video_path)
-        return JSONResponse(result)
-    finally:
-        os.remove(video_path)
