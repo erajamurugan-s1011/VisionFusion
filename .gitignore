@@ -1,0 +1,10 @@
+venv/
+data/
+models/
+src/*/models/
+*.pt
+__pycache__/
+*.pyc
+.pytest_cache/
+tmp_*.jpg
+tmp_*.mp4

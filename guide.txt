@@ -1,0 +1,44 @@
+python -m venv venv
+.\venv\Scripts\Activate
+pip install roboflow
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install ultralytics
+python -m pip install git+https://github.com/openai/CLIP.git
+python -m pip install ftfy regex
+python -m pip install fastapi uvicorn python-multipart
+python -m pip install streamlit requests
+pip install timm
+python -m pip install pytest
+
+
+python download_bdd.py
+python subsample.py
+python download_dmd.py
+python download_pothole.py
+python train.py
+cd ../driver_state
+python train.py
+cd ../../src/pothole_depth
+python train.py
+python pothole_severity.py "../../data/pothole_full/test/images/img-105_jpg.rf.3fe9dff3d1631e79ecb480ff403bcb86.jpg"
+python demo_infer.py "../../data/dmd_full/test/images/gA_1_s1_ir_face_mp4-104_jpg.rf.8582442e2178f15714503b42bbd12c84.jpg" "../../data/bdd100k_subset/test/images/0010bf16-a457685b_jpg.rf.7e1130a7cd624346758481193ad89067.jpg"
+python make_test_video.py
+python video_pothole.py "../../data/test_road_video.mp4"
+python benchmark_latency.py
+python -m pytest tests/ -v
+
+
+#Backend terminal server
+python -m uvicorn main:app --reload --port 8000
+
+cd ../api
+python -m uvicorn main:app --reload --port 8000
+
+#Frontend terminal
+cd src/dashboard
+python -m streamlit run app.py
+
+python -m streamlit run app.py
+
+
+D:\VisionFusion\data\pothole_full\test\images\img-105_jpg.rf.3fe9dff3d1631e79ecb480ff403bcb86.jpg
