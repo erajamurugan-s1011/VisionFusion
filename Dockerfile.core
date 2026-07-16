@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-docker-core.txt .
+RUN pip install --no-cache-dir -r requirements-docker-core.txt
+
+COPY src/api/main_core.py ./src/api/main_core.py
+COPY src/fusion ./src/fusion
+COPY src/road_state/models ./src/road_state/models
+COPY src/driver_state/models ./src/driver_state/models
+
+WORKDIR /app/src/api
+
+EXPOSE 8000
+
+CMD ["uvicorn", "main_core:app", "--host", "0.0.0.0", "--port", "8000"]
