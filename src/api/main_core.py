@@ -23,12 +23,11 @@ import uuid
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
 from fusion_model import driver_risk_score, road_risk_score, combine_risk
 
 app = FastAPI(title="VisionFusion API (Core)")
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,8 +65,8 @@ async def infer(driver_image: UploadFile = File(...), road_image: UploadFile = F
         shutil.copyfileobj(road_image.file, f)
 
     try:
-        driver_results = driver_model.predict(driver_path, verbose=False)[0]
-        road_results = road_model.predict(road_path, verbose=False)[0]
+        driver_results = driver_model.predict(driver_path, imgsz=320, verbose=False)[0]
+        road_results = road_model.predict(road_path, imgsz=320, verbose=False)[0]
 
         driver_detections = [
             (driver_results.names[int(box.cls)], float(box.conf))
