@@ -36,7 +36,7 @@ VisionFusion simulates a lightweight in-vehicle sensor-fusion system by combinin
 Rather than a single monolithic model, VisionFusion deliberately uses **three independently-trained detectors** feeding into a rule-based fusion layer — a design choice made after validating that shared-backbone multi-task training causes gradient interference across dissimilar tasks (see [Architecture](#architecture)).
 
 ## Live Demo
-
+**🔗 Live Demo (Core):** [visionfusion-core.onrender.com](https://visionfusion-core.onrender.com) — driver-state + road-state + fusion, deployed free on Render. *(Free tier spins down after inactivity — first request may take ~30-60s to wake up.)* Full pipeline including pothole detection + depth estimation runs locally — see [Getting Started](#getting-started).
 | Driver State | Road State | Pothole Severity |
 |---|---|---|
 | Drowsiness / distraction detection | Vehicle / pedestrian detection | Depth-based severity scoring |
