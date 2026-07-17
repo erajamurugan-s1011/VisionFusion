@@ -28,6 +28,15 @@ from fusion_model import driver_risk_score, road_risk_score, combine_risk
 
 app = FastAPI(title="VisionFusion API (Core)")
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 DRIVER_MODEL_PATH = "../driver_state/models/driver_state/yolov8n_dmd-2/weights/best.pt"
 ROAD_MODEL_PATH = "../road_state/models/road_state/yolov8n_bdd100k/weights/best.pt"
 
